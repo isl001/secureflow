@@ -1,0 +1,2 @@
+SecureFlow notes
+Week 1: Git + Gitleaks
