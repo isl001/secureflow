@@ -1,4 +1,0 @@
-SecureFlow notes
-Week 1: Git + Gitleaks
-change A
-change B
