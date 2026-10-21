@@ -1,31 +1,38 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from app.db import get_connection, init_db
 
 app = FastAPI(title="SecureFlow API")
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-tasks = [
-    {"id": 1, "title": "Set up Gitleaks", "done": True},
-    {"id": 2, "title": "Learn FastAPI", "done": False},
-]
-
-
-@app.get("/tasks")
-def list_tasks():
-    return tasks
-
-from pydantic import BaseModel, Field
+init_db()
 
 
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=100)
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/tasks")
+def list_tasks():
+    with get_connection() as conn:
+        rows = conn.execute("SELECT id, title, done FROM tasks").fetchall()
+    return [dict(row) for row in rows]
+
+
 @app.post("/tasks", status_code=201)
 def create_task(task: TaskCreate):
-    new_task = {"id": len(tasks) + 1, "title": task.title, "done": False}
-    tasks.append(new_task)
-    return new_task
+    with get_connection() as conn:
+        cursor = conn.execute("INSERT INTO tasks (title) VALUES (?)", (task.title,))
+        task_id = cursor.lastrowid
+    return {"id": task_id, "title": task.title, "done": 0}
+
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int):
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Task not found")

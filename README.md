@@ -15,7 +15,7 @@ workload on Kubernetes.
 ## Roadmap
 
 - [x] Repo + secret scanning
-- [ ] FastAPI + PostgreSQL app
+- [x] FastAPI app (SQLite for now → PostgreSQL with Docker Compose)
 - [ ] Docker (non-root, Trivy scan)
 - [ ] Jenkins pipeline (Gitleaks, SonarQube, Trivy, OWASP ZAP)
 - [ ] Terraform (AWS) + Ansible
