@@ -6,12 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
-
-RUN useradd --uid 10001 --no-create-home appuser \
-    && mkdir /app/data \
-    && chown appuser:appuser /app/data
-
-ENV DB_PATH=/app/data/secureflow.db
+RUN useradd --uid 10001 --no-create-home appuser
 USER appuser
 
 EXPOSE 8000

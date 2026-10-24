@@ -1,11 +1,28 @@
 services:
   api:
     build: .
-    image: secureflow-api:v3
+    image: secureflow-api:v4
     ports:
       - "127.0.0.1:8000:8000"
+    environment:
+      DATABASE_URL: postgresql://secureflow:secureflow@db:5432/secureflow
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: secureflow
+      POSTGRES_PASSWORD: secureflow
+      POSTGRES_DB: secureflow
     volumes:
-      - sf-data:/app/data
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secureflow -d secureflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
-  sf-data:
+  pg-data:
