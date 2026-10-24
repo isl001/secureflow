@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explore the runner
+        run: |
+          echo "Hello from the runner!"
+          whoami
+          uname -m
+          pwd
+          ls -la
