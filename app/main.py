@@ -26,13 +26,15 @@ def list_tasks():
 @app.post("/tasks", status_code=201)
 def create_task(task: TaskCreate):
     with get_connection() as conn:
-        cursor = conn.execute("INSERT INTO tasks (title) VALUES (?)", (task.title,))
-        task_id = cursor.lastrowid
+        row = conn.execute(
+            "INSERT INTO tasks (title) VALUES (%s) RETURNING id", (task.title,)
+        ).fetchone()
+        task_id = row["id"]
     return {"id": task_id, "title": task.title, "done": 0}
 
 @app.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: int):
     with get_connection() as conn:
-        cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        cursor = conn.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Task not found")

@@ -1,20 +1,18 @@
-import sqlite3
+import os
+import psycopg
+from psycopg.rows import dict_row
 
-DB_PATH = "secureflow.db"
-
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://secureflow:secureflow@localhost:5432/secureflow",
+)
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
     with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT    NOT NULL,
-                done  INTEGER NOT NULL DEFAULT 0
-            )
-        """)
+        conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            done INTEGER NOT NULL DEFAULT 0)""")
