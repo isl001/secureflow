@@ -1,6 +1,7 @@
 import sqlite3
+import os
 
-DB_PATH = "secureflow.db"
+DB_PATH = os.getenv("DB_PATH", "secureflow.db")
 
 
 def get_connection():
