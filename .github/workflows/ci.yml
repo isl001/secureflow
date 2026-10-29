@@ -11,7 +11,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Look around the runner
-        run: |
-          pwd
-          ls -la
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Syntax check
+        run: python -m py_compile app/*.py
+
+      - name: Build Docker image
+        run: docker build -t secureflow-api:ci .
