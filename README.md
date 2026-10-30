@@ -45,7 +45,9 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (4
 | App | No default credentials: the app fails fast if `DATABASE_URL` is missing | ✅ |
 | Config | Secrets kept out of Git: `.env` (git-ignored) + `.env.example`; Compose uses `${VAR:?}` | ✅ |
 | Container | Slim base image, non-root user (UID 10001) | ✅ |
-| Dependencies | Snyk (dependency tree, reachability) + Dependabot version updates | ⏳ |
+| Dependencies | Dependabot version updates (weekly) for GitHub Actions, pip and Docker; SHA pins are kept and bumped automatically | ✅ |
+| Dependencies | Dependabot PRs get their own `SONAR_TOKEN` (Dependabot secrets store, separate token), so the SAST gate also runs on bot PRs | ✅ |
+| Dependencies | Snyk (dependency tree, reachability) | ⏳ |
 | Container | Image vulnerability scanning (Trivy) | ⏳ |
 | Supply chain | SBOM (CycloneDX) + image signing | ⏳ |
 | Runtime | DAST (OWASP ZAP) | ⏳ |
@@ -104,7 +106,8 @@ Interactive docs: http://127.0.0.1:8000/docs
 - [x] SAST with SonarQube Cloud + Quality Gate as a required check
 - [x] Supply chain: actions pinned to SHAs; secrets moved to `.env`
 - [x] SCA: `pip-audit` as a required CI gate
-- [ ] SCA: Snyk + Dependabot version updates
+- [x] Dependabot version updates (actions, pip, docker)
+- [ ] SCA: Snyk + scan `scripts/requirements.txt`
 - [ ] Container scanning with Trivy
 - [ ] SBOM + image signing (Cosign)
 - [ ] DAST with OWASP ZAP
