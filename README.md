@@ -11,20 +11,22 @@ workload on Kubernetes.
 ## Pipeline (current)
 
 ```
-Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (3 required checks) ──► merge to main ──► Publish
+Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (4 required checks) ──► merge to main ──► Publish
                                                           │                                         │
                                                           ├─ build        (deps + syntax + docker)  └─ multi-arch image
                                                           ├─ secret-scan  (Gitleaks, full history)     (amd64 + arm64)
-                                                          └─ sast         (SonarCloud Quality Gate)    ──► GHCR
+                                                          ├─ sast         (SonarCloud Quality Gate)    ──► GHCR
+                                                          └─ sca          (pip-audit, known CVEs)
 ```
 
-`main` is protected: no direct pushes, and a PR can only merge when **all three checks pass**.
+`main` is protected: no direct pushes, and a PR can only merge when **all four checks pass**.
 
 | Workflow | Trigger | Job | What it does |
 |---|---|---|---|
 | `ci.yml` | pull request → `main` | `build` | Installs dependencies, compiles the app, builds the Docker image |
 | | | `secret-scan` | Gitleaks scans the **entire Git history** (`fetch-depth: 0`, redacted output) |
 | | | `sast` | SonarQube Cloud analysis; waits for the **Quality Gate** and fails the job if it fails |
+| | | `sca` | `pip-audit` checks `requirements.txt` against known vulnerabilities (OSV / PyPI advisories); `--strict` fails closed |
 | `publish.yml` | push → `main` | `publish` | Builds a multi-arch image and pushes it to GHCR tagged with the commit SHA and `latest` |
 
 ## Security controls
@@ -36,13 +38,14 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (3
 | GitHub | Dependabot alerts + security updates | ✅ |
 | CI | Gitleaks scan of full history as a required check | ✅ |
 | CI | SAST with SonarQube Cloud; Quality Gate is a required check ("Clean as You Code": judges new code) | ✅ |
-| CI | Gate verified with a negative test (insecure code → merge **BLOCKED**) | ✅ |
+| CI | SAST gate verified with a negative test (insecure code → merge **BLOCKED**) | ✅ |
+| CI | SCA with `pip-audit` as a required check; verified with a negative test (vulnerable `idna` → merge **BLOCKED**) | ✅ |
 | Supply chain | Third-party GitHub Actions pinned to full commit SHAs (immutable) | ✅ |
 | Supply chain | `GITHUB_TOKEN` with least-privilege `permissions` (`contents: read`, `packages: write`) | ✅ |
 | App | No default credentials: the app fails fast if `DATABASE_URL` is missing | ✅ |
 | Config | Secrets kept out of Git: `.env` (git-ignored) + `.env.example`; Compose uses `${VAR:?}` | ✅ |
 | Container | Slim base image, non-root user (UID 10001) | ✅ |
-| Dependencies | SCA (pip-audit / Snyk) as a CI gate | ⏳ |
+| Dependencies | Snyk (dependency tree, reachability) + Dependabot version updates | ⏳ |
 | Container | Image vulnerability scanning (Trivy) | ⏳ |
 | Supply chain | SBOM (CycloneDX) + image signing | ⏳ |
 | Runtime | DAST (OWASP ZAP) | ⏳ |
@@ -100,7 +103,8 @@ Interactive docs: http://127.0.0.1:8000/docs
 - [x] CD: publish multi-arch image to GHCR
 - [x] SAST with SonarQube Cloud + Quality Gate as a required check
 - [x] Supply chain: actions pinned to SHAs; secrets moved to `.env`
-- [ ] SCA: pip-audit / Snyk + Dependabot version updates
+- [x] SCA: `pip-audit` as a required CI gate
+- [ ] SCA: Snyk + Dependabot version updates
 - [ ] Container scanning with Trivy
 - [ ] SBOM + image signing (Cosign)
 - [ ] DAST with OWASP ZAP
@@ -110,5 +114,5 @@ Interactive docs: http://127.0.0.1:8000/docs
 
 ## Tech
 
-GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · Python · FastAPI · PostgreSQL ·
+GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · pip-audit · Python · FastAPI · PostgreSQL ·
 *(planned)* Trivy · Snyk · OWASP ZAP · Kubernetes · ArgoCD · Terraform · Ansible · AWS · Prometheus · Grafana
