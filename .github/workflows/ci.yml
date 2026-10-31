@@ -68,4 +68,4 @@ jobs:
         run: pip install pip-audit==2.10.1
 
       - name: Scan dependencies for known vulnerabilities
-        run: pip-audit -r requirements.txt --strict --desc
+        run: pip-audit -r requirements.txt -r scripts/requirements.txt --strict --desc

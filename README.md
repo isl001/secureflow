@@ -26,7 +26,7 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (4
 | `ci.yml` | pull request → `main` | `build` | Installs dependencies, compiles the app, builds the Docker image |
 | | | `secret-scan` | Gitleaks scans the **entire Git history** (`fetch-depth: 0`, redacted output) |
 | | | `sast` | SonarQube Cloud analysis; waits for the **Quality Gate** and fails the job if it fails |
-| | | `sca` | `pip-audit` checks `requirements.txt` against known vulnerabilities (OSV / PyPI advisories); `--strict` fails closed |
+| | | `sca` | `pip-audit` checks `requirements.txt` and `scripts/requirements.txt` against known vulnerabilities (OSV / PyPI advisories); `--strict` fails closed |
 | `publish.yml` | push → `main` | `publish` | Builds a multi-arch image and pushes it to GHCR tagged with the commit SHA and `latest` |
 
 ## Security controls
@@ -107,7 +107,8 @@ Interactive docs: http://127.0.0.1:8000/docs
 - [x] Supply chain: actions pinned to SHAs; secrets moved to `.env`
 - [x] SCA: `pip-audit` as a required CI gate
 - [x] Dependabot version updates (actions, pip, docker)
-- [ ] SCA: Snyk + scan `scripts/requirements.txt`
+- [x] SCA covers `scripts/requirements.txt` too (gap found through the SBOM)
+- [ ] SCA: Snyk
 - [ ] Container scanning with Trivy
 - [ ] SBOM + image signing (Cosign)
 - [ ] DAST with OWASP ZAP
