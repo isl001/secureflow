@@ -69,3 +69,21 @@ jobs:
 
       - name: Scan dependencies for known vulnerabilities
         run: pip-audit -r requirements.txt -r scripts/requirements.txt --strict --desc
+
+  image-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t secureflow-api:ci .
+
+      - name: Save image to a tar file
+        run: docker save -o image.tar secureflow-api:ci
+
+      - name: Scan image with Trivy
+        run: |
+          docker run --rm -v "$PWD:/work" ghcr.io/aquasecurity/trivy:0.76.1 \
+            image --input /work/image.tar \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1

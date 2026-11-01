@@ -11,15 +11,16 @@ workload on Kubernetes.
 ## Pipeline (current)
 
 ```
-Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (4 required checks) ──► merge to main ──► Publish
+Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (5 required checks) ──► merge to main ──► Publish
                                                           │                                         │
                                                           ├─ build        (deps + syntax + docker)  └─ multi-arch image
                                                           ├─ secret-scan  (Gitleaks, full history)     (amd64 + arm64)
                                                           ├─ sast         (SonarCloud Quality Gate)    ──► GHCR
-                                                          └─ sca          (pip-audit, known CVEs)
+                                                          ├─ sca          (pip-audit, known CVEs)
+                                                          └─ image-scan   (Trivy on the built image)
 ```
 
-`main` is protected: no direct pushes, and a PR can only merge when **all four checks pass**.
+`main` is protected: no direct pushes, and a PR can only merge when **all five checks pass**.
 
 | Workflow | Trigger | Job | What it does |
 |---|---|---|---|
@@ -27,6 +28,7 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (4
 | | | `secret-scan` | Gitleaks scans the **entire Git history** (`fetch-depth: 0`, redacted output) |
 | | | `sast` | SonarQube Cloud analysis; waits for the **Quality Gate** and fails the job if it fails |
 | | | `sca` | `pip-audit` checks `requirements.txt` and `scripts/requirements.txt` against known vulnerabilities (OSV / PyPI advisories); `--strict` fails closed |
+| | | `image-scan` | Builds the image and scans it with Trivy (OS packages + Python packages); fails on HIGH/CRITICAL issues that have a fix (`--ignore-unfixed`) |
 | `publish.yml` | push → `main` | `publish` | Builds a multi-arch image and pushes it to GHCR tagged with the commit SHA and `latest` |
 
 ## Security controls
@@ -47,8 +49,8 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (4
 | Container | Slim base image, non-root user (UID 10001) | ✅ |
 | Dependencies | Dependabot version updates (weekly) for GitHub Actions, pip and Docker; SHA pins are kept and bumped automatically | ✅ |
 | Dependencies | Dependabot PRs get their own `SONAR_TOKEN` (Dependabot secrets store, separate token), so the SAST gate also runs on bot PRs | ✅ |
-| Dependencies | Snyk (dependency tree, reachability) | ⏳ |
-| Container | Image vulnerability scanning (Trivy) | ⏳ |
+| Dependencies | Snyk monitors the repo (requirements files + Dockerfile) through the GitHub integration | ✅ |
+| Container | Trivy scans the **built** image in CI as a required check (fixable HIGH/CRITICAL only) | ✅ |
 | Supply chain | SBOM (CycloneDX) + image signing | ⏳ |
 | Runtime | DAST (OWASP ZAP) | ⏳ |
 
@@ -108,8 +110,8 @@ Interactive docs: http://127.0.0.1:8000/docs
 - [x] SCA: `pip-audit` as a required CI gate
 - [x] Dependabot version updates (actions, pip, docker)
 - [x] SCA covers `scripts/requirements.txt` too (gap found through the SBOM)
-- [ ] SCA: Snyk
-- [ ] Container scanning with Trivy
+- [x] Snyk monitoring (GitHub integration)
+- [x] Container scanning with Trivy as a required CI gate
 - [ ] SBOM + image signing (Cosign)
 - [ ] DAST with OWASP ZAP
 - [ ] Kubernetes + ArgoCD (GitOps)
@@ -118,5 +120,5 @@ Interactive docs: http://127.0.0.1:8000/docs
 
 ## Tech
 
-GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · pip-audit · Python · FastAPI · PostgreSQL ·
-*(planned)* Trivy · Snyk · OWASP ZAP · Kubernetes · ArgoCD · Terraform · Ansible · AWS · Prometheus · Grafana
+GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · pip-audit · Snyk · Trivy · Python · FastAPI · PostgreSQL ·
+*(planned)* OWASP ZAP · Kubernetes · ArgoCD · Terraform · Ansible · AWS · Prometheus · Grafana
