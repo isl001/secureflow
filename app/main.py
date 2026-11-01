@@ -8,7 +8,7 @@ init_db()
 
 
 class TaskCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=100, pattern=r"^[^\x00-\x1f\x7f]+$")
 
 
 @app.get("/health")
