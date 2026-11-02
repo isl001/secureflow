@@ -7,6 +7,14 @@ app = FastAPI(title="SecureFlow API")
 init_db()
 
 
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    return response
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=100, pattern=r"^[^\x00-\x1f\x7f]+$")
 
