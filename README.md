@@ -11,16 +11,17 @@ workload on Kubernetes.
 ## Pipeline (current)
 
 ```
-Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (5 required checks) ──► merge to main ──► Publish
+Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (6 required checks) ──► merge to main ──► Publish
                                                           │                                         │
                                                           ├─ build        (deps + syntax + docker)  └─ multi-arch image
                                                           ├─ secret-scan  (Gitleaks, full history)     (amd64 + arm64)
                                                           ├─ sast         (SonarCloud Quality Gate)    ──► GHCR
                                                           ├─ sca          (pip-audit, known CVEs)
-                                                          └─ image-scan   (Trivy on the built image)
+                                                          ├─ image-scan   (Trivy on the built image)
+                                                          └─ dast         (OWASP ZAP against the running app)
 ```
 
-`main` is protected: no direct pushes, and a PR can only merge when **all five checks pass**.
+`main` is protected: no direct pushes, and a PR can only merge when **all six checks pass**.
 
 | Workflow | Trigger | Job | What it does |
 |---|---|---|---|
@@ -29,6 +30,7 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (5
 | | | `sast` | SonarQube Cloud analysis; waits for the **Quality Gate** and fails the job if it fails |
 | | | `sca` | `pip-audit` checks `requirements.txt` and `scripts/requirements.txt` against known vulnerabilities (OSV / PyPI advisories); `--strict` fails closed |
 | | | `image-scan` | Builds the image and scans it with Trivy (OS packages + Python packages); fails on HIGH/CRITICAL issues that have a fix (`--ignore-unfixed`) |
+| | | `dast` | Starts a throwaway app + database with Docker Compose (random password), runs an OWASP ZAP API scan from `/openapi.json`, uploads the HTML report as an artifact, then tears everything down |
 | `publish.yml` | push → `main` | `publish` | Builds a multi-arch image and pushes it to GHCR tagged with the commit SHA and `latest` |
 
 ## Security controls
@@ -52,7 +54,9 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (5
 | Dependencies | Snyk monitors the repo (requirements files + Dockerfile) through the GitHub integration | ✅ |
 | Container | Trivy scans the **built** image in CI as a required check (fixable HIGH/CRITICAL only) | ✅ |
 | Supply chain | SBOM (CycloneDX) + image signing | ⏳ |
-| Runtime | DAST (OWASP ZAP) | ⏳ |
+| Runtime | DAST: OWASP ZAP API scan in CI as a required check (fails on any warning) | ✅ |
+| App | Input validation rejects control characters in task titles (found by ZAP: NUL byte caused a 500) | ✅ |
+| App | Security headers on every response: `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin` | ✅ |
 
 ### Triage decisions (SonarCloud findings)
 
@@ -61,6 +65,8 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (5
 | Hard-coded PostgreSQL password (`app/db.py`, `compose.yaml`) | **Fixed** | Moved to environment / `.env`; fail fast when missing |
 | Actions referenced by mutable tags (`@v3`) | **Fixed** | Pinned to commit SHAs; tags can be force-moved (cf. tj-actions/changed-files, 2025) |
 | Path traversal in `scripts/policy_check.py` | **False positive** | CLI run by developers/CI on repo files; caller already has the same permissions, so no trust boundary is crossed. Re-evaluate if ever exposed via an API |
+| ZAP: `POST /tasks` returned 500 (NUL byte reached PostgreSQL) | **Fixed** | Pydantic pattern rejects control characters → 422 instead of 500 |
+| ZAP: missing `X-Content-Type-Options` and `Cross-Origin-Resource-Policy` | **Fixed** | FastAPI middleware adds both headers to every response |
 | Unpinned / source installs in `pip install` | **Open** | Planned with the SCA stage (hash-locked dependencies) |
 
 ## Quick start (local)
@@ -113,12 +119,12 @@ Interactive docs: http://127.0.0.1:8000/docs
 - [x] Snyk monitoring (GitHub integration)
 - [x] Container scanning with Trivy as a required CI gate
 - [ ] SBOM + image signing (Cosign)
-- [ ] DAST with OWASP ZAP
+- [x] DAST with OWASP ZAP (API scan) as a required CI gate
 - [ ] Kubernetes + ArgoCD (GitOps)
 - [ ] Terraform (AWS) + Ansible
 - [ ] Prometheus + Grafana
 
 ## Tech
 
-GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · pip-audit · Snyk · Trivy · Python · FastAPI · PostgreSQL ·
-*(planned)* OWASP ZAP · Kubernetes · ArgoCD · Terraform · Ansible · AWS · Prometheus · Grafana
+GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · pip-audit · Snyk · Trivy · OWASP ZAP · Python · FastAPI · PostgreSQL ·
+*(planned)* Kubernetes · ArgoCD · Terraform · Ansible · AWS · Prometheus · Grafana

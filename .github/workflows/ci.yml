@@ -87,3 +87,49 @@ jobs:
           docker run --rm -v "$PWD:/work" ghcr.io/aquasecurity/trivy:0.76.1 \
             image --input /work/image.tar \
             --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+
+  dast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Create a throwaway .env for the test stack
+        run: |
+          {
+            echo "POSTGRES_USER=secureflow"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "POSTGRES_DB=secureflow"
+          } > .env
+
+      - name: Start the app
+        run: docker compose up -d --build
+
+      - name: Wait until the API is ready
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          echo "API did not become ready" >&2
+          docker compose logs api
+          exit 1
+
+      - name: Run ZAP API scan
+        run: |
+          mkdir -p zap-out && chmod 777 zap-out
+          docker run --rm --network secureflow_default \
+            -v "$PWD/zap-out:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:2.17.0 \
+            zap-api-scan.py -t http://api:8000/openapi.json -f openapi -r zap-report.html
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap-out/zap-report.html
+
+      - name: Stop the app
+        if: always()
+        run: docker compose down -v
