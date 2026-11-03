@@ -115,6 +115,9 @@ jobs:
           docker compose logs api
           exit 1
 
+      - name: Smoke test with netcheck.sh
+        run: ./scripts/netcheck.sh http://127.0.0.1:8000/health
+
       - name: Run ZAP API scan
         run: |
           mkdir -p zap-out && chmod 777 zap-out
