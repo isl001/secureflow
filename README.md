@@ -30,7 +30,7 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (6
 | | | `sast` | SonarQube Cloud analysis; waits for the **Quality Gate** and fails the job if it fails |
 | | | `sca` | `pip-audit` checks `requirements.txt` and `scripts/requirements.txt` against known vulnerabilities (OSV / PyPI advisories); `--strict` fails closed |
 | | | `image-scan` | Builds the image and scans it with Trivy (OS packages + Python packages); fails on HIGH/CRITICAL issues that have a fix (`--ignore-unfixed`) |
-| | | `dast` | Starts a throwaway app + database with Docker Compose (random password), runs an OWASP ZAP API scan from `/openapi.json`, uploads the HTML report as an artifact, then tears everything down |
+| | | `dast` | Starts a throwaway app + database with Docker Compose (random password), smoke-tests it with `scripts/netcheck.sh`, runs an OWASP ZAP API scan from `/openapi.json`, uploads the HTML report as an artifact, then tears everything down |
 | `publish.yml` | push → `main` | `publish` | Builds a multi-arch image and pushes it to GHCR tagged with the commit SHA and `latest` |
 
 ## Security controls
@@ -104,6 +104,29 @@ curl http://127.0.0.1:8000/health      # {"status":"ok"}
 
 Interactive docs: http://127.0.0.1:8000/docs
 
+## Troubleshooting tool: `scripts/netcheck.sh`
+
+Checks a URL layer by layer and stops at the first layer that fails, so you know where to look:
+
+```
+$ ./scripts/netcheck.sh https://example.com
+== Checking https://example.com (host=example.com, port=443)
+[DNS ] example.com -> 104.20.23.154 ✅
+[TCP ] port 443 is open ✅
+[TLS ] certificate valid until Dec 25 22:56:35 2026 GMT ✅
+[HTTP] GET https://example.com -> 200 ✅
+All checks passed ✅
+```
+
+| Layer | What it checks | Typical failure |
+|---|---|---|
+| DNS | the name resolves to an IP (`dig`) | NXDOMAIN, wrong record |
+| TCP | the port answers (`nc`), and tells **refused** from **timed out** | app not running / firewall or security group |
+| TLS | the certificate is not expired or expiring within 30 days (`openssl -checkend`) | expired certificate |
+| HTTP | the status code (`curl`), 4xx vs 5xx | wrong path or auth / server error |
+
+Works on macOS and Linux (exit code 0 = all good, 1 = a layer failed, 2 = wrong usage).
+
 ## Roadmap
 
 - [x] Repo + secret scanning (pre-commit, push protection)
@@ -118,6 +141,7 @@ Interactive docs: http://127.0.0.1:8000/docs
 - [x] SCA covers `scripts/requirements.txt` too (gap found through the SBOM)
 - [x] Snyk monitoring (GitHub integration)
 - [x] Container scanning with Trivy as a required CI gate
+- [x] Layer-by-layer network check script (`netcheck.sh`) used as a CI smoke test
 - [ ] SBOM + image signing (Cosign)
 - [x] DAST with OWASP ZAP (API scan) as a required CI gate
 - [ ] Kubernetes + ArgoCD (GitOps)
