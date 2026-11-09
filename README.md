@@ -127,6 +127,20 @@ All checks passed ✅
 
 Works on macOS and Linux (exit code 0 = all good, 1 = a layer failed, 2 = wrong usage).
 
+## AWS network (dev)
+
+The network SecureFlow will run in on AWS, built with the AWS CLI script [`infra/aws-cli/create-network.sh`](infra/aws-cli/create-network.sh). Full design: [`docs/network.md`](docs/network.md).
+
+| Tier | Subnets (2 AZs) | Route to the internet | Security group (inbound) |
+|---|---|---|---|
+| public (ALB) | 10.20.1.0/24, 10.20.2.0/24 | Internet Gateway | 443 from `0.0.0.0/0` |
+| app (API) | 10.20.11.0/24, 10.20.12.0/24 | none yet (NAT when deployed) | 8000 from the ALB's SG only |
+| db (PostgreSQL) | 10.20.21.0/24, 10.20.22.0/24 | never | 5432 from the API's SG only |
+
+- One route table per tier, so a change for the app tier never gives the database a path to the internet.
+- Security groups are chained by SG ID (not IPs), and no port 22 is open anywhere.
+- Everything built so far is free; NAT Gateway and load balancer costs are added only during deploy labs.
+
 ## Roadmap
 
 - [x] Repo + secret scanning (pre-commit, push protection)
@@ -143,6 +157,8 @@ Works on macOS and Linux (exit code 0 = all good, 1 = a layer failed, 2 = wrong 
 - [x] Container scanning with Trivy as a required CI gate
 - [x] Layer-by-layer network check script (`netcheck.sh`) used as a CI smoke test
 - [ ] SBOM + image signing (Cosign)
+- [x] AWS network (VPC, 3-tier subnets in 2 AZs, chained security groups) built with the AWS CLI
+- [ ] Deploy SecureFlow on AWS (EC2/ALB inside the new VPC)
 - [x] DAST with OWASP ZAP (API scan) as a required CI gate
 - [ ] Kubernetes + ArgoCD (GitOps)
 - [ ] Terraform (AWS) + Ansible
