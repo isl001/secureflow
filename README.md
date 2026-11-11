@@ -140,6 +140,7 @@ The network SecureFlow will run in on AWS, built with the AWS CLI script [`infra
 - One route table per tier, so a change for the app tier never gives the database a path to the internet.
 - Security groups are chained by SG ID (not IPs), and no port 22 is open anywhere.
 - Everything built so far is free; NAT Gateway and load balancer costs are added only during deploy labs.
+- First deployment lab (EC2 + ALB, Session Manager, IMDSv2, health-check negative test, full cleanup): [`docs/deploy-aws-lab.md`](docs/deploy-aws-lab.md).
 
 ## Roadmap
 
@@ -158,7 +159,8 @@ The network SecureFlow will run in on AWS, built with the AWS CLI script [`infra
 - [x] Layer-by-layer network check script (`netcheck.sh`) used as a CI smoke test
 - [ ] SBOM + image signing (Cosign)
 - [x] AWS network (VPC, 3-tier subnets in 2 AZs, chained security groups) built with the AWS CLI
-- [ ] Deploy SecureFlow on AWS (EC2/ALB inside the new VPC)
+- [x] Deploy lab on AWS: EC2 (private, no SSH) behind an ALB, then cleaned up
+- [ ] Production-style AWS deploy: HTTPS (ACM), RDS, Auto Scaling across 2 AZs
 - [x] DAST with OWASP ZAP (API scan) as a required CI gate
 - [ ] Kubernetes + ArgoCD (GitOps)
 - [ ] Terraform (AWS) + Ansible
