@@ -3,10 +3,34 @@
 [![CI](https://github.com/isl001/secureflow/actions/workflows/ci.yml/badge.svg)](https://github.com/isl001/secureflow/actions/workflows/ci.yml)
 [![Publish](https://github.com/isl001/secureflow/actions/workflows/publish.yml/badge.svg)](https://github.com/isl001/secureflow/actions/workflows/publish.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=isl001_secureflow&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=isl001_secureflow)
+[![Release](https://img.shields.io/github/v/release/isl001/secureflow)](https://github.com/isl001/secureflow/releases)
+[![License](https://img.shields.io/github/license/isl001/secureflow)](LICENSE)
 
-End-to-end **DevSecOps pipeline** that takes a containerised FastAPI + PostgreSQL
-application from a Git commit, through automated security checks, to a running
-workload on Kubernetes.
+End-to-end **DevSecOps project**: a containerised FastAPI + PostgreSQL application goes from a
+Git commit, through six automated security gates, to a published image that runs on AWS
+in a private subnet behind a load balancer.
+
+**Contents:** [Architecture](#architecture) · [Pipeline](#pipeline-current) · [Security controls](#security-controls) · [Quick start](#quick-start-local) · [AWS](#aws) · [Repository layout](#repository-layout) · [Roadmap](#roadmap)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    dev([Developer]) -->|pre-commit: Gitleaks| pr[Pull request]
+    pr --> ci{{"CI: 6 required checks<br/>build · secret-scan · sast<br/>sca · image-scan · dast"}}
+    ci -->|all green, merge to main| pub[Publish workflow]
+    pub -->|multi-arch image| ghcr[(GHCR)]
+    ghcr -. pulled at boot .-> ec2
+    user([Users]) --> alb
+    subgraph aws["AWS: secureflow-vpc, 2 Availability Zones"]
+        alb[Load balancer<br/>public subnets] -->|8000| ec2[API on EC2<br/>private app subnets]
+        ec2 -->|5432| db[(PostgreSQL)]
+    end
+```
+
+- **Left side (automatic):** nothing reaches `main`, or the registry, without passing every gate.
+- **Right side (AWS):** only the load balancer is public. The API has no public IP and no SSH; the database tier has no route to the internet.
+- **Honest status:** the deploy step to AWS is manual today ([deploy lab](docs/deploy-aws-lab.md)), and in that lab PostgreSQL ran as a container next to the API. Next: RDS in the database subnets, HTTPS, and continuous deployment.
 
 ## Pipeline (current)
 
@@ -57,8 +81,13 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (6
 | Runtime | DAST: OWASP ZAP API scan in CI as a required check (fails on any warning) | ✅ |
 | App | Input validation rejects control characters in task titles (found by ZAP: NUL byte caused a 500) | ✅ |
 | App | Security headers on every response: `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin` | ✅ |
+| Container | Base-image CVEs patched in the Dockerfile when the upstream image lags behind (zlib1g; verified with `dpkg-query` and Trivy) | ✅ |
+| Cloud network | 3-tier VPC in 2 AZs; one route table per tier; database subnets have no route to the internet | ✅ |
+| Cloud network | Security groups chained by SG ID (load balancer → API → database); no port 22 anywhere | ✅ |
+| Cloud access | EC2 gets temporary credentials from an IAM role; shell access through Session Manager (IAM-controlled, logged); IMDSv2 required | ✅ (deploy lab) |
+| Cloud | HTTPS at the load balancer (ACM certificate) | ⏳ |
 
-### Triage decisions (SonarCloud findings)
+### Triage decisions
 
 | Finding | Decision | Reason |
 |---|---|---|
@@ -67,7 +96,8 @@ Developer ──► pre-commit (Gitleaks) ──► Pull Request ──► CI (6
 | Path traversal in `scripts/policy_check.py` | **False positive** | CLI run by developers/CI on repo files; caller already has the same permissions, so no trust boundary is crossed. Re-evaluate if ever exposed via an API |
 | ZAP: `POST /tasks` returned 500 (NUL byte reached PostgreSQL) | **Fixed** | Pydantic pattern rejects control characters → 422 instead of 500 |
 | ZAP: missing `X-Content-Type-Options` and `Cross-Origin-Resource-Policy` | **Fixed** | FastAPI middleware adds both headers to every response |
-| Unpinned / source installs in `pip install` | **Open** | Planned with the SCA stage (hash-locked dependencies) |
+| Trivy: 2 HIGH CVEs in `zlib1g` on a PR that did not touch the Dockerfile | **Fixed** | New CVEs; checked that the latest `python:3.12-slim` still shipped the old package, then upgraded only `zlib1g` in the Dockerfile. To remove when the base image includes the fix |
+| Unpinned / source installs in `pip install` | **Open** | Versions are pinned, but hash-locked installs (`--require-hashes`) are not done yet |
 
 ## Quick start (local)
 
@@ -127,9 +157,9 @@ All checks passed ✅
 
 Works on macOS and Linux (exit code 0 = all good, 1 = a layer failed, 2 = wrong usage).
 
-## AWS network (dev)
+## AWS
 
-The network SecureFlow will run in on AWS, built with the AWS CLI script [`infra/aws-cli/create-network.sh`](infra/aws-cli/create-network.sh). Full design: [`docs/network.md`](docs/network.md).
+The network SecureFlow runs in on AWS (dev), built with the AWS CLI script [`infra/aws-cli/create-network.sh`](infra/aws-cli/create-network.sh). Full design: [`docs/network.md`](docs/network.md).
 
 | Tier | Subnets (2 AZs) | Route to the internet | Security group (inbound) |
 |---|---|---|---|
@@ -142,31 +172,44 @@ The network SecureFlow will run in on AWS, built with the AWS CLI script [`infra
 - Everything built so far is free; NAT Gateway and load balancer costs are added only during deploy labs.
 - First deployment lab (EC2 + ALB, Session Manager, IMDSv2, health-check negative test, full cleanup): [`docs/deploy-aws-lab.md`](docs/deploy-aws-lab.md).
 
+The VPC as AWS draws it (public subnets → Internet Gateway, app subnets → NAT during the lab, database subnets → local only):
+
+![VPC resource map](docs/images/aws-03-vpc-resource-map.png)
+
+## Repository layout
+
+```
+app/                     FastAPI application (API + database access)
+scripts/                 netcheck.sh (layer-by-layer network check), policy_check.py
+infra/aws-cli/           create-network.sh (builds the AWS network)
+docs/                    network.md (design), deploy-aws-lab.md (deployment evidence), images/
+.github/workflows/       ci.yml (6 required checks), publish.yml (image → GHCR)
+.github/dependabot.yml   weekly updates for GitHub Actions, pip and Docker
+Dockerfile               non-root image
+compose.yaml             local stack: API + PostgreSQL (secrets from .env)
+```
+
 ## Roadmap
 
+**Done**
 - [x] Repo + secret scanning (pre-commit, push protection)
 - [x] FastAPI app + PostgreSQL with Docker Compose (healthcheck)
-- [x] Non-root Dockerfile, multi-arch image
-- [x] CI with GitHub Actions (build, secret-scan) as required checks
-- [x] CD: publish multi-arch image to GHCR
-- [x] SAST with SonarQube Cloud + Quality Gate as a required check
-- [x] Supply chain: actions pinned to SHAs; secrets moved to `.env`
-- [x] SCA: `pip-audit` as a required CI gate
-- [x] Dependabot version updates (actions, pip, docker)
-- [x] SCA covers `scripts/requirements.txt` too (gap found through the SBOM)
-- [x] Snyk monitoring (GitHub integration)
-- [x] Container scanning with Trivy as a required CI gate
+- [x] Non-root Dockerfile, multi-arch image published to GHCR
+- [x] CI with 6 required checks: build, secret-scan, SAST, SCA, image scan, DAST (each proven with a negative test)
+- [x] Supply chain: actions pinned to SHAs, Dependabot (actions, pip, docker), Snyk monitoring
 - [x] Layer-by-layer network check script (`netcheck.sh`) used as a CI smoke test
-- [ ] SBOM + image signing (Cosign)
-- [x] AWS network (VPC, 3-tier subnets in 2 AZs, chained security groups) built with the AWS CLI
-- [x] Deploy lab on AWS: EC2 (private, no SSH) behind an ALB, then cleaned up
+- [x] AWS network: 3-tier VPC in 2 AZs with chained security groups (AWS CLI)
+- [x] Deploy lab on AWS: private EC2 (no SSH) behind an ALB, then cleaned up
+
+**Next**
 - [ ] Production-style AWS deploy: HTTPS (ACM), RDS, Auto Scaling across 2 AZs
-- [x] DAST with OWASP ZAP (API scan) as a required CI gate
-- [ ] Kubernetes + ArgoCD (GitOps)
-- [ ] Terraform (AWS) + Ansible
-- [ ] Prometheus + Grafana
+- [ ] Terraform: the same AWS infrastructure as code + IaC scanning
+- [ ] SBOM + image signing (Cosign), security reports
+- [ ] Kubernetes + ArgoCD (GitOps, continuous deployment)
+- [ ] Prometheus + Grafana, Ansible
 
 ## Tech
 
-GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · pip-audit · Snyk · Trivy · OWASP ZAP · Python · FastAPI · PostgreSQL ·
-*(planned)* Kubernetes · ArgoCD · Terraform · Ansible · AWS · Prometheus · Grafana
+GitHub Actions · Docker · GHCR · Gitleaks · SonarQube Cloud · pip-audit · Snyk · Trivy · OWASP ZAP · Python · FastAPI · PostgreSQL · Bash · AWS (VPC, EC2, ALB, IAM, Systems Manager)
+
+*Planned:* Terraform · Kubernetes · ArgoCD · Ansible · Prometheus · Grafana
